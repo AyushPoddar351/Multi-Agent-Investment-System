@@ -42,6 +42,7 @@ class StockData:
     high_price: float
     low_price: float
     date: str
+    
 
 @dataclass
 class TechnicalIndicators:
