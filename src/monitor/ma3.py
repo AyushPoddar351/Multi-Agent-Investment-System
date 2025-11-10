@@ -1,21 +1,22 @@
 """
-Monitor Agent - Pure Data Collection & Analysis (Updated Version)
-Multi-Agent Investment Management System - Time-Based Investment Horizon
+Monitor Agent - Pure Market Data Collection (Refactored)
+Multi-Agent Investment Management System
+
+RESPONSIBILITY: Collect and analyze market data ONLY
+NO customer-specific logic - purely market intelligence
 """
 
 import yfinance as yf
 import pandas as pd
 import numpy as np
 import json
-from datetime import datetime, timedelta
-from typing import Dict, List, Tuple, Optional
-from dataclasses import dataclass
+from datetime import datetime
+from typing import List
+from dataclasses import dataclass, asdict
 import os
 import sys
-from openpyxl import Workbook, load_workbook
-from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
-from openpyxl.chart import LineChart, BarChart, PieChart, Reference
-from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl import Workbook
+from openpyxl.styles import PatternFill, Font
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -28,7 +29,7 @@ logger = CustomLogger().get_logger(__file__)
 
 @dataclass
 class StockData:
-    """Pure stock data without recommendations"""
+    """Pure stock data"""
     symbol: str
     company_name: str
     sector: str
@@ -42,7 +43,6 @@ class StockData:
     high_price: float
     low_price: float
     date: str
-    
 
 @dataclass
 class TechnicalIndicators:
@@ -58,7 +58,7 @@ class TechnicalIndicators:
     bollinger_upper: float
     bollinger_lower: float
     macd: float
-    signal_strength: str  # STRONG_UP, UP, NEUTRAL, DOWN, STRONG_DOWN
+    signal_strength: str
 
 @dataclass
 class SectorAnalysis:
@@ -68,54 +68,33 @@ class SectorAnalysis:
     avg_price_change: float
     avg_volume_change: float
     sector_volatility: float
-    trend_direction: str  # UPTREND, DOWNTREND, SIDEWAYS
+    trend_direction: str
     top_performers: List[str]
     bottom_performers: List[str]
-    sector_strength: str  # STRONG, MODERATE, WEAK
+    sector_strength: str
 
 @dataclass
 class MarketOverview:
     """Overall market condition assessment"""
     analysis_date: datetime
-    market_sentiment: str  # BULLISH, BEARISH, NEUTRAL
+    market_sentiment: str
     market_volatility: float
     advancing_stocks: int
     declining_stocks: int
     total_volume: int
-    market_breadth: float  # Advancing/Declining ratio
-    fear_greed_index: str  # FEAR, NEUTRAL, GREED
+    market_breadth: float
+    fear_greed_index: str
 
-@dataclass
-class CustomerDataFilter:
-    """Customer-specific data filtering preferences with time-based investment horizon"""
-    customer_id: str
-    customer_name: str
-    preferred_sectors: List[str]
-    risk_tolerance: str  # LOW, MEDIUM, HIGH
-    investment_horizon_months: int  # Numeric: 6, 12, 24, 60, etc.
-    capital_amount: float
-    
-    @property
-    def investment_horizon_category(self) -> str:
-        """Auto-calculate category for human readability"""
-        if self.investment_horizon_months <= 12:
-            return "SHORT"
-        elif self.investment_horizon_months <= 36:
-            return "MEDIUM"
-        else:
-            return "LONG"
 
-class ExcelDataReporter:
-    """Handles Excel report generation for pure data analysis"""
+class ExcelMarketReporter:
+    """Handles Excel report generation for general market data ONLY"""
     
     def __init__(self, reports_dir: str = "monitor_data"):
-        # Create monitor_data directory - navigate from src/monitor/ to project root
         current_file = os.path.abspath(__file__)
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
         self.reports_dir = os.path.join(project_root, "data", reports_dir)
         os.makedirs(self.reports_dir, exist_ok=True)
         
-        # Color scheme for data visualization
         self.colors = {
             'header': PatternFill(start_color='1F4E79', end_color='1F4E79', fill_type='solid'),
             'positive': PatternFill(start_color='C6EFCE', end_color='C6EFCE', fill_type='solid'),
@@ -135,56 +114,34 @@ class ExcelDataReporter:
             'header': Font(color='FFFFFF', bold=True, size=12),
             'title': Font(bold=True, size=14),
             'subtitle': Font(bold=True, size=11),
-            'normal': Font(size=10),
-            'data': Font(size=9)
         }
     
-    def create_comprehensive_data_report(self, market_overview: MarketOverview, 
-                                       stock_data: List[StockData],
-                                       technical_indicators: List[TechnicalIndicators],
-                                       sector_analysis: List[SectorAnalysis],
-                                       customer_filter: CustomerDataFilter) -> tuple[str, str]:
-        """Create separate market and customer Excel reports"""
+    def create_market_report(self, market_overview: MarketOverview, 
+                           stock_data: List[StockData],
+                           technical_indicators: List[TechnicalIndicators],
+                           sector_analysis: List[SectorAnalysis]) -> str:
+        """Create comprehensive market report - NO customer data"""
         
         date_str = market_overview.analysis_date.strftime('%Y%m%d')
+        filename = f"{self.reports_dir}/MarketData_General_{date_str}.xlsx"
         
-        # Create general market data file
-        market_filename = f"{self.reports_dir}/MarketData_General_{date_str}.xlsx"
-        market_wb = Workbook()
-        market_wb.remove(market_wb.active)
+        wb = Workbook()
+        wb.remove(wb.active)
         
-        self._create_general_market_overview_sheet(market_wb, market_overview)
-        self._create_stock_data_sheet(market_wb, stock_data)
-        self._create_technical_indicators_sheet(market_wb, technical_indicators)
-        self._create_sector_analysis_sheet(market_wb, sector_analysis)
-        self._create_historical_trends_sheet(market_wb, stock_data)
+        self._create_market_overview_sheet(wb, market_overview)
+        self._create_stock_data_sheet(wb, stock_data)
+        self._create_technical_indicators_sheet(wb, technical_indicators)
+        self._create_sector_analysis_sheet(wb, sector_analysis)
+        self._create_historical_trends_sheet(wb, stock_data, sector_analysis)
         
-        market_wb.save(market_filename)
-        logger.info(f"General market report saved: {market_filename}")
+        wb.save(filename)
+        logger.info(f"Market report saved: {filename}")
         
-        # Create customer-specific file in customer folder
-        current_file = os.path.abspath(__file__)
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
-        customer_dir = os.path.join(project_root, "data", "monitor_data", customer_filter.customer_id)
-        os.makedirs(customer_dir, exist_ok=True)
-        
-        customer_filename = f"{customer_dir}/CustomerData_{customer_filter.customer_id}_{date_str}.xlsx"
-        customer_wb = Workbook()
-        customer_wb.remove(customer_wb.active)
-        
-        self._create_customer_overview_sheet(customer_wb, market_overview, customer_filter)
-        self._create_filtered_data_sheet(customer_wb, stock_data, technical_indicators, customer_filter)
-        
-        customer_wb.save(customer_filename)
-        logger.info(f"Customer report saved: {customer_filename}")
-        
-        return market_filename, customer_filename
+        return filename
     
-    def _create_general_market_overview_sheet(self, wb: Workbook, market_overview: MarketOverview):
-        """Create general market overview sheet"""
+    def _create_market_overview_sheet(self, wb: Workbook, market_overview: MarketOverview):
         ws = wb.create_sheet("📊 Market Overview", 0)
         
-        # Title and date
         ws['A1'] = "GENERAL MARKET DATA ANALYSIS"
         ws['A2'] = f"Analysis Date: {market_overview.analysis_date.strftime('%B %d, %Y %H:%M')}"
         ws['A3'] = "Comprehensive Market Analysis - All Sectors"
@@ -192,13 +149,12 @@ class ExcelDataReporter:
         for row in range(1, 4):
             ws[f'A{row}'].font = self.fonts['title']
         
-        # Market Sentiment Section
         ws['A5'] = "📈 MARKET SENTIMENT"
         ws['A5'].font = self.fonts['subtitle']
         
-        sentiment_color = self.colors['positive'] if market_overview.market_sentiment == 'BULLISH' else \
-                         self.colors['negative'] if market_overview.market_sentiment == 'BEARISH' else \
-                         self.colors['neutral']
+        sentiment_color = (self.colors['positive'] if market_overview.market_sentiment == 'BULLISH' 
+                          else self.colors['negative'] if market_overview.market_sentiment == 'BEARISH' 
+                          else self.colors['neutral'])
         
         sentiment_data = [
             ['Overall Market Sentiment', market_overview.market_sentiment],
@@ -207,15 +163,14 @@ class ExcelDataReporter:
             ['Market Breadth Ratio', f"{market_overview.market_breadth:.2f}"]
         ]
         
-        for i, (metric, value) in enumerate(sentiment_data):
-            ws[f'A{7+i}'] = metric
-            cell = ws[f'B{7+i}']
+        for i, (metric, value) in enumerate(sentiment_data, 7):
+            ws[f'A{i}'] = metric
+            cell = ws[f'B{i}']
             cell.value = value
-            if i == 0:
+            if i == 7:
                 cell.fill = sentiment_color
                 cell.font = Font(bold=True)
         
-        # Market Statistics
         ws['A13'] = "📊 MARKET STATISTICS"
         ws['A13'].font = self.fonts['subtitle']
         
@@ -226,109 +181,46 @@ class ExcelDataReporter:
             ['Net Advancers', market_overview.advancing_stocks - market_overview.declining_stocks]
         ]
         
-        for i, (metric, value) in enumerate(stats_data):
-            ws[f'A{15+i}'] = metric
-            ws[f'B{15+i}'] = value
-        
-        self._auto_adjust_columns(ws)
-    
-    def _create_customer_overview_sheet(self, wb: Workbook, market_overview: MarketOverview, 
-                                      customer_filter: CustomerDataFilter):
-        """Create customer-specific overview sheet with time-based investment horizon"""
-        ws = wb.create_sheet("🎯 Customer Overview", 0)
-        
-        # Title and date
-        ws['A1'] = f"CUSTOMER PORTFOLIO ANALYSIS - {customer_filter.customer_name}"
-        ws['A2'] = f"Analysis Date: {market_overview.analysis_date.strftime('%B %d, %Y %H:%M')}"
-        ws['A3'] = f"Customer ID: {customer_filter.customer_id}"
-        
-        for row in range(1, 4):
-            ws[f'A{row}'].font = self.fonts['title']
-        
-        # Customer Profile Section
-        ws['A5'] = "👤 CUSTOMER PROFILE"
-        ws['A5'].font = self.fonts['subtitle']
-        
-        # Format investment horizon display
-        years = customer_filter.investment_horizon_months // 12
-        months = customer_filter.investment_horizon_months % 12
-        
-        if years > 0 and months > 0:
-            horizon_display = f"{customer_filter.investment_horizon_months} months ({years}y {months}m) - {customer_filter.investment_horizon_category}"
-        elif years > 0:
-            horizon_display = f"{customer_filter.investment_horizon_months} months ({years} years) - {customer_filter.investment_horizon_category}"
-        else:
-            horizon_display = f"{customer_filter.investment_horizon_months} months - {customer_filter.investment_horizon_category}"
-        
-        profile_data = [
-            ['Risk Tolerance', customer_filter.risk_tolerance],
-            ['Investment Horizon', horizon_display],
-            ['Capital Amount', f"₹{customer_filter.capital_amount:,.0f}"],
-            ['Preferred Sectors', ', '.join(customer_filter.preferred_sectors)]
-        ]
-        
-        for i, (metric, value) in enumerate(profile_data):
-            ws[f'A{7+i}'] = metric
-            ws[f'B{7+i}'] = value
-        
-        # Market Context for Customer
-        ws['A13'] = "📈 MARKET CONTEXT"
-        ws['A13'].font = self.fonts['subtitle']
-        
-        context_data = [
-            ['Market Sentiment', market_overview.market_sentiment],
-            ['Market Volatility', f"{market_overview.market_volatility:.2%}"],
-            ['Market Breadth', f"{market_overview.market_breadth:.2f}"]
-        ]
-        
-        for i, (metric, value) in enumerate(context_data):
-            ws[f'A{15+i}'] = metric
-            ws[f'B{15+i}'] = value
+        for i, (metric, value) in enumerate(stats_data, 15):
+            ws[f'A{i}'] = metric
+            ws[f'B{i}'] = value
         
         self._auto_adjust_columns(ws)
     
     def _create_stock_data_sheet(self, wb: Workbook, stock_data: List[StockData]):
-        """Create comprehensive stock data sheet"""
         ws = wb.create_sheet("💰 Stock Data")
         
-        # Title
         ws['A1'] = "COMPREHENSIVE STOCK DATA"
         ws['A1'].font = self.fonts['title']
         
-        # Create DataFrame from stock data
-        data_rows = []
-        for stock in stock_data:
-            data_rows.append({
-                'Symbol': stock.symbol,
-                'Company Name': stock.company_name,
-                'Sector': stock.sector,
-                'Current Price (₹)': stock.current_price,
-                'Open (₹)': stock.open_price,
-                'High (₹)': stock.high_price,
-                'Low (₹)': stock.low_price,
-                'Volume': stock.volume,
-                'Day Change (₹)': stock.price_change,
-                'Day Change %': stock.price_change_pct,
-                'Market Cap (₹Cr)': stock.market_cap / 10000000 if stock.market_cap else 0,
-                'P/E Ratio': stock.pe_ratio,
-                'Date': stock.date
-            })
-        
-        if not data_rows:
+        if not stock_data:
             ws['A3'] = "No stock data available"
             return
         
-        df = pd.DataFrame(data_rows)
+        df = pd.DataFrame([{
+            'Symbol': s.symbol,
+            'Company Name': s.company_name,
+            'Sector': s.sector,
+            'Current Price (₹)': s.current_price,
+            'Open (₹)': s.open_price,
+            'High (₹)': s.high_price,
+            'Low (₹)': s.low_price,
+            'Volume': s.volume,
+            'Day Change (₹)': s.price_change,
+            'Day Change %': s.price_change_pct,
+            'Market Cap (₹Cr)': s.market_cap / 10000000 if s.market_cap else 0,
+            'P/E Ratio': s.pe_ratio,
+            'Date': s.date
+        } for s in stock_data])
+        
         df = df.sort_values(['Sector', 'Day Change %'], ascending=[True, False])
         
-        # Add headers
         headers = list(df.columns)
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=3, column=col, value=header)
             cell.fill = self.colors['header']
             cell.font = self.fonts['header']
         
-        # Add data with sector-based coloring
         sector_colors = {
             'TECH': self.colors['sector_tech'],
             'BANKING': self.colors['sector_banking'], 
@@ -342,12 +234,10 @@ class ExcelDataReporter:
             for col_idx, value in enumerate(row, 1):
                 cell = ws.cell(row=row_idx, column=col_idx, value=value)
                 
-                # Color code by sector
                 sector = row['Sector']
                 if sector in sector_colors:
                     cell.fill = sector_colors[sector]
                 
-                # Highlight day change
                 if col_idx == df.columns.get_loc('Day Change %') + 1:
                     if value > 0:
                         cell.fill = self.colors['positive']
@@ -357,57 +247,47 @@ class ExcelDataReporter:
         self._auto_adjust_columns(ws)
     
     def _create_technical_indicators_sheet(self, wb: Workbook, technical_indicators: List[TechnicalIndicators]):
-        """Create technical indicators analysis sheet"""
         ws = wb.create_sheet("🔧 Technical Indicators")
         
         ws['A1'] = "TECHNICAL ANALYSIS INDICATORS"
         ws['A1'].font = self.fonts['title']
         
-        # Create DataFrame
-        indicator_rows = []
-        for indicator in technical_indicators:
-            indicator_rows.append({
-                'Symbol': indicator.symbol,
-                'RSI (14)': indicator.rsi,
-                'SMA 20': indicator.sma_20,
-                'SMA 50': indicator.sma_50,
-                'SMA 200': indicator.sma_200,
-                'Volatility (30d)': indicator.volatility,
-                'Momentum 20d': indicator.momentum_20d,
-                'Momentum 50d': indicator.momentum_50d,
-                'Bollinger Upper': indicator.bollinger_upper,
-                'Bollinger Lower': indicator.bollinger_lower,
-                'MACD': indicator.macd,
-                'Signal Strength': indicator.signal_strength
-            })
-        
-        if not indicator_rows:
+        if not technical_indicators:
             ws['A3'] = "No technical indicators available"
             return
         
-        df = pd.DataFrame(indicator_rows)
+        df = pd.DataFrame([{
+            'Symbol': t.symbol,
+            'RSI (14)': t.rsi,
+            'SMA 20': t.sma_20,
+            'SMA 50': t.sma_50,
+            'SMA 200': t.sma_200,
+            'Volatility (30d)': t.volatility,
+            'Momentum 20d': t.momentum_20d,
+            'Momentum 50d': t.momentum_50d,
+            'Bollinger Upper': t.bollinger_upper,
+            'Bollinger Lower': t.bollinger_lower,
+            'MACD': t.macd,
+            'Signal Strength': t.signal_strength
+        } for t in technical_indicators])
         
-        # Add headers
         for col, header in enumerate(df.columns, 1):
             cell = ws.cell(row=3, column=col, value=header)
             cell.fill = self.colors['header']
             cell.font = self.fonts['header']
         
-        # Add data with indicator-based coloring
         for row_idx, (_, row) in enumerate(df.iterrows(), 4):
             for col_idx, value in enumerate(row, 1):
                 cell = ws.cell(row=row_idx, column=col_idx, value=value)
                 
-                # Color code RSI
                 if col_idx == df.columns.get_loc('RSI (14)') + 1:
                     if value > 70:
-                        cell.fill = self.colors['strong_down']  # Overbought
+                        cell.fill = self.colors['strong_down']
                     elif value < 30:
-                        cell.fill = self.colors['strong_up']    # Oversold
+                        cell.fill = self.colors['strong_up']
                     else:
                         cell.fill = self.colors['neutral']
                 
-                # Color code signal strength
                 elif col_idx == df.columns.get_loc('Signal Strength') + 1:
                     if 'STRONG_UP' in str(value):
                         cell.fill = self.colors['strong_up']
@@ -417,52 +297,42 @@ class ExcelDataReporter:
                         cell.fill = self.colors['positive']
                     elif 'DOWN' in str(value):
                         cell.fill = self.colors['negative']
-                    else:
-                        cell.fill = self.colors['neutral']
         
         self._auto_adjust_columns(ws)
     
     def _create_sector_analysis_sheet(self, wb: Workbook, sector_analysis: List[SectorAnalysis]):
-        """Create sector performance analysis sheet"""
         ws = wb.create_sheet("🏭 Sector Analysis")
         
         ws['A1'] = "SECTOR PERFORMANCE ANALYSIS"
         ws['A1'].font = self.fonts['title']
         
-        # Create DataFrame
-        sector_rows = []
-        for sector in sector_analysis:
-            sector_rows.append({
-                'Sector': sector.sector,
-                'Stock Count': sector.stock_count,
-                'Avg Price Change %': sector.avg_price_change,
-                'Avg Volume Change %': sector.avg_volume_change,
-                'Sector Volatility': sector.sector_volatility,
-                'Trend Direction': sector.trend_direction,
-                'Sector Strength': sector.sector_strength,
-                'Top Performers': ', '.join(sector.top_performers),
-                'Bottom Performers': ', '.join(sector.bottom_performers)
-            })
-        
-        if not sector_rows:
+        if not sector_analysis:
             ws['A3'] = "No sector analysis available"
             return
         
-        df = pd.DataFrame(sector_rows)
+        df = pd.DataFrame([{
+            'Sector': s.sector,
+            'Stock Count': s.stock_count,
+            'Avg Price Change %': s.avg_price_change,
+            'Avg Volume Change %': s.avg_volume_change,
+            'Sector Volatility': s.sector_volatility,
+            'Trend Direction': s.trend_direction,
+            'Sector Strength': s.sector_strength,
+            'Top Performers': ', '.join(s.top_performers),
+            'Bottom Performers': ', '.join(s.bottom_performers)
+        } for s in sector_analysis])
+        
         df = df.sort_values('Avg Price Change %', ascending=False)
         
-        # Add headers
         for col, header in enumerate(df.columns, 1):
             cell = ws.cell(row=3, column=col, value=header)
             cell.fill = self.colors['header']
             cell.font = self.fonts['header']
         
-        # Add data with performance-based coloring
         for row_idx, (_, row) in enumerate(df.iterrows(), 4):
             for col_idx, value in enumerate(row, 1):
                 cell = ws.cell(row=row_idx, column=col_idx, value=value)
                 
-                # Color code price change
                 if col_idx == df.columns.get_loc('Avg Price Change %') + 1:
                     if value > 2:
                         cell.fill = self.colors['strong_up']
@@ -472,10 +342,7 @@ class ExcelDataReporter:
                         cell.fill = self.colors['strong_down']
                     elif value < 0:
                         cell.fill = self.colors['negative']
-                    else:
-                        cell.fill = self.colors['neutral']
                 
-                # Color code trend direction
                 elif col_idx == df.columns.get_loc('Trend Direction') + 1:
                     if value == 'UPTREND':
                         cell.fill = self.colors['positive']
@@ -486,25 +353,21 @@ class ExcelDataReporter:
         
         self._auto_adjust_columns(ws)
     
-    def _create_historical_trends_sheet(self, wb: Workbook, stock_data: List[StockData]):
-        """Create historical trends and patterns sheet"""
+    def _create_historical_trends_sheet(self, wb: Workbook, stock_data: List[StockData], sector_analysis: List[SectorAnalysis]):
         ws = wb.create_sheet("📈 Historical Trends")
         
         ws['A1'] = "HISTORICAL TRENDS & PATTERNS"
         ws['A1'].font = self.fonts['title']
         
-        # For now, create a summary of current vs historical performance
         ws['A3'] = "📊 Price Movement Summary"
         ws['A3'].font = self.fonts['subtitle']
         
-        # Analyze current data for trends
         sectors = {}
         for stock in stock_data:
             if stock.sector not in sectors:
                 sectors[stock.sector] = {'stocks': [], 'avg_change': 0}
             sectors[stock.sector]['stocks'].append(stock)
         
-        # Calculate sector averages
         summary_data = []
         for sector, data in sectors.items():
             stocks = data['stocks']
@@ -522,7 +385,6 @@ class ExcelDataReporter:
         
         df = pd.DataFrame(summary_data)
         
-        # Add to worksheet
         for col, header in enumerate(df.columns, 1):
             cell = ws.cell(row=5, column=col, value=header)
             cell.fill = self.colors['header']
@@ -532,7 +394,6 @@ class ExcelDataReporter:
             for col_idx, value in enumerate(row, 1):
                 ws.cell(row=row_idx, column=col_idx, value=value)
         
-        # Add trend analysis notes
         ws['A15'] = "📝 TREND ANALYSIS NOTES"
         ws['A15'].font = self.fonts['subtitle']
         
@@ -548,100 +409,7 @@ class ExcelDataReporter:
         
         self._auto_adjust_columns(ws)
     
-    def _create_filtered_data_sheet(self, wb: Workbook, stock_data: List[StockData], 
-                                  technical_indicators: List[TechnicalIndicators],
-                                  customer_filter: CustomerDataFilter):
-        """Create customer-specific filtered data sheet"""
-        ws = wb.create_sheet("🎯 Customer Filtered Data")
-        
-        ws['A1'] = f"FILTERED DATA FOR {customer_filter.customer_name}"
-        ws['A2'] = f"Sectors: {', '.join(customer_filter.preferred_sectors)} | Risk: {customer_filter.risk_tolerance} | Horizon: {customer_filter.investment_horizon_months}m ({customer_filter.investment_horizon_category})"
-        
-        ws['A1'].font = self.fonts['title']
-        ws['A2'].font = self.fonts['subtitle']
-        
-        # Filter stocks by customer preferences
-        filtered_stocks = [stock for stock in stock_data 
-                          if stock.sector in customer_filter.preferred_sectors]
-        
-        if not filtered_stocks:
-            ws['A4'] = "No stocks found matching customer preferences"
-            return
-        
-        # Create comprehensive filtered view
-        filtered_data = []
-        for stock in filtered_stocks:
-            # Find corresponding technical indicators
-            tech_data = next((t for t in technical_indicators if t.symbol == stock.symbol), None)
-            
-            row_data = {
-                'Symbol': stock.symbol,
-                'Company': stock.company_name,
-                'Sector': stock.sector,
-                'Price (₹)': stock.current_price,
-                'Change %': stock.price_change_pct,
-                'Volume': stock.volume,
-                'Market Cap (₹Cr)': stock.market_cap / 10000000 if stock.market_cap else 0,
-                'RSI': tech_data.rsi if tech_data else 'N/A',
-                'Volatility': tech_data.volatility if tech_data else 'N/A',
-                'Signal': tech_data.signal_strength if tech_data else 'N/A',
-                'Risk Level': self._assess_risk_level(stock, tech_data, customer_filter.risk_tolerance)
-            }
-            filtered_data.append(row_data)
-        
-        # Sort by performance
-        filtered_df = pd.DataFrame(filtered_data)
-        filtered_df = filtered_df.sort_values('Change %', ascending=False)
-        
-        # Add headers
-        for col, header in enumerate(filtered_df.columns, 1):
-            cell = ws.cell(row=4, column=col, value=header)
-            cell.fill = self.colors['header']
-            cell.font = self.fonts['header']
-        
-        # Add data with risk-based coloring
-        for row_idx, (_, row) in enumerate(filtered_df.iterrows(), 5):
-            for col_idx, value in enumerate(row, 1):
-                cell = ws.cell(row=row_idx, column=col_idx, value=value)
-                
-                # Color code by risk level
-                if col_idx == filtered_df.columns.get_loc('Risk Level') + 1:
-                    if value == 'LOW':
-                        cell.fill = self.colors['positive']
-                    elif value == 'HIGH':
-                        cell.fill = self.colors['negative']
-                    else:
-                        cell.fill = self.colors['neutral']
-        
-        # Add summary statistics
-        ws[f'A{len(filtered_df) + 7}'] = "📊 FILTERED DATA SUMMARY"
-        ws[f'A{len(filtered_df) + 7}'].font = self.fonts['subtitle']
-        
-        summary_row = len(filtered_df) + 9
-        ws[f'A{summary_row}'] = f"Total Filtered Stocks: {len(filtered_stocks)}"
-        ws[f'A{summary_row + 1}'] = f"Average Performance: {filtered_df['Change %'].mean():.2f}%"
-        ws[f'A{summary_row + 2}'] = f"Best Performer: {filtered_df.iloc[0]['Symbol']} ({filtered_df.iloc[0]['Change %']:.2f}%)"
-        ws[f'A{summary_row + 3}'] = f"Sectors Covered: {len(set(stock.sector for stock in filtered_stocks))}"
-        ws[f'A{summary_row + 4}'] = f"Investment Horizon: {customer_filter.investment_horizon_months} months ({customer_filter.investment_horizon_category})"
-        
-        self._auto_adjust_columns(ws)
-    
-    def _assess_risk_level(self, stock: StockData, tech_data: TechnicalIndicators, 
-                          customer_risk_tolerance: str) -> str:
-        """Assess risk level for display purposes only"""
-        if not tech_data:
-            return "UNKNOWN"
-        
-        # Simple risk assessment based on volatility
-        if tech_data.volatility < 0.2:
-            return "LOW"
-        elif tech_data.volatility < 0.4:
-            return "MEDIUM"
-        else:
-            return "HIGH"
-    
     def _auto_adjust_columns(self, ws):
-        """Auto-adjust column widths"""
         for column in ws.columns:
             max_length = 0
             column_letter = column[0].column_letter
@@ -654,8 +422,9 @@ class ExcelDataReporter:
             adjusted_width = min(max_length + 2, 50)
             ws.column_dimensions[column_letter].width = adjusted_width
 
-class IndianStockDataCollector:
-    """Refactored Monitor Agent - Pure Data Collection & Analysis"""
+
+class MarketDataCollector:
+    """Pure Market Data Collection - NO Customer Logic"""
     
     def __init__(self):
         self.sectors = {
@@ -665,7 +434,6 @@ class IndianStockDataCollector:
                 ("WIPRO.NS", "Wipro Limited"),
                 ("HCLTECH.NS", "HCL Technologies"),
                 ("TECHM.NS", "Tech Mahindra"),
-                ("LTI.NS", "Larsen & Toubro Infotech")
             ],
             "BANKING": [
                 ("HDFCBANK.NS", "HDFC Bank"),
@@ -709,7 +477,7 @@ class IndianStockDataCollector:
             ]
         }
         
-        # Create stock mappings
+        # Build stock mappings
         self.all_stocks = []
         self.stock_names = {}
         self.stock_sectors = {}
@@ -720,12 +488,12 @@ class IndianStockDataCollector:
                 self.stock_names[symbol] = name
                 self.stock_sectors[symbol] = sector
         
-        self.excel_reporter = ExcelDataReporter()
+        self.excel_reporter = ExcelMarketReporter()
         
-        logger.info(f"Initialized Stock Data Collector with {len(self.all_stocks)} stocks across {len(self.sectors)} sectors")
+        logger.info(f"Monitor Agent initialized: {len(self.all_stocks)} stocks, {len(self.sectors)} sectors")
     
     def collect_stock_data(self, symbols: List[str]) -> List[StockData]:
-        """Collect comprehensive stock data"""
+        """Collect stock data"""
         stock_data = []
         
         logger.info(f"Collecting data for {len(symbols)} stocks...")
@@ -737,13 +505,11 @@ class IndianStockDataCollector:
                 
                 if not hist_data.empty and len(hist_data) >= 2:
                     latest = hist_data.iloc[-1]
-                    previous = hist_data.iloc[-2] if len(hist_data) > 1 else latest
+                    previous = hist_data.iloc[-2]
                     
-                    # Calculate changes
                     price_change = latest['Close'] - previous['Close']
                     price_change_pct = (price_change / previous['Close']) * 100
                     
-                    # Get additional info
                     try:
                         info = stock.info
                         market_cap = info.get('marketCap', 0)
@@ -769,33 +535,31 @@ class IndianStockDataCollector:
                     )
                     
                     stock_data.append(stock_data_obj)
-                    logger.info(f"✓ Collected data for {symbol}")
+                    logger.info(f"✓ {symbol}")
                 
             except Exception as e:
-                logger.error(f"✗ Error collecting data for {symbol}: {e}")
+                logger.error(f"✗ {symbol}: {e}")
                 continue
         
-        logger.info(f"Successfully collected data for {len(stock_data)} stocks")
+        logger.info(f"Collected {len(stock_data)} stocks")
         return stock_data
     
     def calculate_technical_indicators(self, symbols: List[str]) -> List[TechnicalIndicators]:
-        """Calculate comprehensive technical indicators"""
+        """Calculate technical indicators"""
         technical_indicators = []
         
-        logger.info(f"Calculating technical indicators for {len(symbols)} stocks...")
+        logger.info(f"Calculating indicators for {len(symbols)} stocks...")
         
         for symbol in symbols:
             try:
                 stock = yf.Ticker(symbol)
-                hist_data = stock.history(period="1y")  # Need more data for indicators
+                hist_data = stock.history(period="1y")
                 
-                if len(hist_data) < 50:  # Need minimum data for calculations
+                if len(hist_data) < 50:
                     continue
                 
                 prices = hist_data['Close'].values
-                volumes = hist_data['Volume'].values
                 
-                # Calculate indicators
                 rsi = self._calculate_rsi(prices)
                 sma_20 = np.mean(prices[-20:])
                 sma_50 = np.mean(prices[-50:]) if len(prices) >= 50 else sma_20
@@ -825,20 +589,19 @@ class IndianStockDataCollector:
                 )
                 
                 technical_indicators.append(tech_indicator)
-                logger.info(f"✓ Calculated indicators for {symbol}")
+                logger.info(f"✓ {symbol}")
                 
             except Exception as e:
-                logger.error(f"✗ Error calculating indicators for {symbol}: {e}")
+                logger.error(f"✗ {symbol}: {e}")
                 continue
         
-        logger.info(f"Calculated indicators for {len(technical_indicators)} stocks")
+        logger.info(f"Calculated {len(technical_indicators)} indicators")
         return technical_indicators
     
     def analyze_sectors(self, stock_data: List[StockData]) -> List[SectorAnalysis]:
         """Analyze sector performance"""
         sector_groups = {}
         
-        # Group stocks by sector
         for stock in stock_data:
             if stock.sector not in sector_groups:
                 sector_groups[stock.sector] = []
@@ -850,15 +613,11 @@ class IndianStockDataCollector:
             if not stocks:
                 continue
             
-            # Calculate sector metrics
             price_changes = [stock.price_change_pct for stock in stocks]
-            volumes = [stock.volume for stock in stocks]
             
             avg_price_change = np.mean(price_changes)
-            avg_volume_change = 0  # Would need historical volume data
             sector_volatility = np.std(price_changes)
             
-            # Determine trend
             positive_count = len([p for p in price_changes if p > 0])
             negative_count = len([p for p in price_changes if p < 0])
             
@@ -869,12 +628,10 @@ class IndianStockDataCollector:
             else:
                 trend_direction = "SIDEWAYS"
             
-            # Find top and bottom performers
             sorted_stocks = sorted(stocks, key=lambda x: x.price_change_pct, reverse=True)
             top_performers = [stock.symbol for stock in sorted_stocks[:3]]
             bottom_performers = [stock.symbol for stock in sorted_stocks[-3:]]
             
-            # Determine sector strength
             if avg_price_change > 2:
                 sector_strength = "STRONG"
             elif avg_price_change > 0:
@@ -886,7 +643,7 @@ class IndianStockDataCollector:
                 sector=sector,
                 stock_count=len(stocks),
                 avg_price_change=avg_price_change,
-                avg_volume_change=avg_volume_change,
+                avg_volume_change=0,
                 sector_volatility=sector_volatility,
                 trend_direction=trend_direction,
                 top_performers=top_performers,
@@ -900,7 +657,7 @@ class IndianStockDataCollector:
         return sector_analyses
     
     def assess_market_overview(self, stock_data: List[StockData]) -> MarketOverview:
-        """Assess overall market conditions"""
+        """Assess overall market"""
         if not stock_data:
             return MarketOverview(
                 analysis_date=datetime.now(),
@@ -913,18 +670,15 @@ class IndianStockDataCollector:
                 fear_greed_index="NEUTRAL"
             )
         
-        # Calculate market metrics
         advancing_stocks = len([s for s in stock_data if s.price_change_pct > 0])
         declining_stocks = len([s for s in stock_data if s.price_change_pct < 0])
         total_volume = sum(s.volume for s in stock_data)
         
         market_breadth = advancing_stocks / declining_stocks if declining_stocks > 0 else 2.0
         
-        # Calculate market volatility
         price_changes = [s.price_change_pct for s in stock_data]
         market_volatility = np.std(price_changes) / 100
         
-        # Determine market sentiment
         avg_change = np.mean(price_changes)
         if avg_change > 1.0 and market_breadth > 1.2:
             market_sentiment = "BULLISH"
@@ -933,7 +687,6 @@ class IndianStockDataCollector:
         else:
             market_sentiment = "NEUTRAL"
         
-        # Simple fear/greed assessment
         if market_volatility > 0.03:
             fear_greed_index = "FEAR"
         elif market_volatility < 0.015 and avg_change > 0.5:
@@ -952,134 +705,6 @@ class IndianStockDataCollector:
             fear_greed_index=fear_greed_index
         )
     
-    def run_comprehensive_data_collection(self, customer_filter: CustomerDataFilter) -> str:
-        """Run complete data collection and analysis"""
-        logger.info("Starting comprehensive market data collection...")
-        
-        try:
-            # Step 1: Collect stock data
-            logger.info("Step 1: Collecting stock price data...")
-            all_stock_data = self.collect_stock_data(self.all_stocks)
-            
-            # Step 2: Calculate technical indicators
-            logger.info("Step 2: Calculating technical indicators...")
-            technical_indicators = self.calculate_technical_indicators(self.all_stocks)
-            
-            # Step 3: Analyze sectors
-            logger.info("Step 3: Analyzing sector performance...")
-            sector_analyses = self.analyze_sectors(all_stock_data)
-            
-            # Step 4: Assess market overview
-            logger.info("Step 4: Assessing market conditions...")
-            market_overview = self.assess_market_overview(all_stock_data)
-            
-            # Step 5: Generate Excel reports
-            logger.info("Step 5: Generating market and customer reports...")
-            market_report, customer_report = self.excel_reporter.create_comprehensive_data_report(
-                market_overview=market_overview,
-                stock_data=all_stock_data,
-                technical_indicators=technical_indicators,
-                sector_analysis=sector_analyses,
-                customer_filter=customer_filter
-            )
-            
-            # Step 6: Create data export for other agents
-            self._export_data_for_agents(all_stock_data, technical_indicators, 
-                                       sector_analyses, market_overview, customer_filter)
-            
-            logger.info("Comprehensive data collection completed successfully!")
-            return market_report, customer_report
-            
-        except Exception as e:
-            logger.error(f"Error in data collection: {e}")
-            raise
-    
-    def _export_data_for_agents(self, stock_data: List[StockData], 
-                               technical_indicators: List[TechnicalIndicators],
-                               sector_analyses: List[SectorAnalysis],
-                               market_overview: MarketOverview,
-                               customer_filter: CustomerDataFilter):
-        """Export structured data for other agents to use"""
-        
-        # Create data export directory in customer folder
-        current_file = os.path.abspath(__file__)
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
-        export_dir = os.path.join(project_root, "data", "monitor_data", customer_filter.customer_id)
-        os.makedirs(export_dir, exist_ok=True)
-        
-        # Export for Investment Planner
-        planner_data = {
-            "timestamp": datetime.now().isoformat(),
-            "customer_id": customer_filter.customer_id,
-            "market_overview": {
-                "sentiment": market_overview.market_sentiment,
-                "volatility": market_overview.market_volatility,
-                "breadth": market_overview.market_breadth
-            },
-            "stocks": [],
-            "sectors": [],
-            "customer_preferences": {
-                "sectors": customer_filter.preferred_sectors,
-                "risk_tolerance": customer_filter.risk_tolerance,
-                "investment_horizon_months": customer_filter.investment_horizon_months,
-                "investment_horizon_category": customer_filter.investment_horizon_category
-            }
-        }
-        
-        # Add stock data
-        for stock in stock_data:
-            if stock.sector in customer_filter.preferred_sectors:
-                tech_data = next((t for t in technical_indicators if t.symbol == stock.symbol), None)
-                
-                stock_entry = {
-                    "symbol": stock.symbol,
-                    "company_name": stock.company_name,
-                    "sector": stock.sector,
-                    "current_price": stock.current_price,
-                    "price_change_pct": stock.price_change_pct,
-                    "volume": stock.volume,
-                    "market_cap": stock.market_cap,
-                    "technical_indicators": {
-                        "rsi": tech_data.rsi if tech_data else None,
-                        "volatility": tech_data.volatility if tech_data else None,
-                        "momentum_20d": tech_data.momentum_20d if tech_data else None,
-                        "signal_strength": tech_data.signal_strength if tech_data else None
-                    }
-                }
-                planner_data["stocks"].append(stock_entry)
-        
-        # Add sector data
-        for sector in sector_analyses:
-            if sector.sector in customer_filter.preferred_sectors:
-                sector_entry = {
-                    "sector": sector.sector,
-                    "performance": sector.avg_price_change,
-                    "volatility": sector.sector_volatility,
-                    "trend": sector.trend_direction,
-                    "strength": sector.sector_strength
-                }
-                planner_data["sectors"].append(sector_entry)
-        
-        # Save for Investment Planner
-        with open(f"{export_dir}/investment_planner_data.json", 'w') as f:
-            json.dump(planner_data, f, indent=2)
-        
-        # Export CSV for backup
-        stock_df = pd.DataFrame([{
-            'Symbol': s.symbol,
-            'Company': s.company_name,
-            'Sector': s.sector,
-            'Price': s.current_price,
-            'Change_Pct': s.price_change_pct,
-            'Volume': s.volume,
-            'Market_Cap': s.market_cap
-        } for s in stock_data])
-        
-        stock_df.to_csv(f"{export_dir}/stock_data.csv", index=False)
-        
-        logger.info(f"Data exported for other agents in {export_dir}")
-    
-    # Technical calculation helper methods
     def _calculate_rsi(self, prices: np.ndarray, period: int = 14) -> float:
         """Calculate RSI"""
         if len(prices) < period + 1:
@@ -1120,7 +745,7 @@ class IndianStockDataCollector:
         momentum = (prices[-1] / prices[-period-1]) - 1
         return float(momentum)
     
-    def _calculate_bollinger_bands(self, prices: np.ndarray, period: int = 20, std_dev: float = 2.0) -> Tuple[float, float]:
+    def _calculate_bollinger_bands(self, prices: np.ndarray, period: int = 20, std_dev: float = 2.0) -> tuple[float, float]:
         """Calculate Bollinger Bands"""
         if len(prices) < period:
             return float(prices[-1]), float(prices[-1])
@@ -1163,15 +788,15 @@ class IndianStockDataCollector:
         
         # RSI signals
         if rsi > 80:
-            signals.append(-2)  # Strong overbought
+            signals.append(-2)
         elif rsi > 70:
-            signals.append(-1)  # Overbought
+            signals.append(-1)
         elif rsi < 20:
-            signals.append(2)   # Strong oversold
+            signals.append(2)
         elif rsi < 30:
-            signals.append(1)   # Oversold
+            signals.append(1)
         else:
-            signals.append(0)   # Neutral
+            signals.append(0)
         
         # MACD signals
         if macd > 0:
@@ -1181,7 +806,7 @@ class IndianStockDataCollector:
         else:
             signals.append(0)
         
-        # Price trend (simple)
+        # Price trend
         if len(prices) >= 5:
             recent_trend = (prices[-1] / prices[-5]) - 1
             if recent_trend > 0.02:
@@ -1191,7 +816,6 @@ class IndianStockDataCollector:
             else:
                 signals.append(0)
         
-        # Calculate overall signal
         total_signal = sum(signals)
         
         if total_signal >= 3:
@@ -1204,64 +828,133 @@ class IndianStockDataCollector:
             return "DOWN"
         else:
             return "NEUTRAL"
+    
+    def run_comprehensive_data_collection(self) -> str:
+        """Run complete market data collection - NO customer input"""
+        logger.info("Starting comprehensive market data collection...")
+        
+        try:
+            # Collect all market data
+            all_stock_data = self.collect_stock_data(self.all_stocks)
+            technical_indicators = self.calculate_technical_indicators(self.all_stocks)
+            sector_analyses = self.analyze_sectors(all_stock_data)
+            market_overview = self.assess_market_overview(all_stock_data)
+            
+            # Create general market report
+            market_report = self.excel_reporter.create_market_report(
+                market_overview=market_overview,
+                stock_data=all_stock_data,
+                technical_indicators=technical_indicators,
+                sector_analysis=sector_analyses
+            )
+            
+            # Export general market data for ALL agents to consume
+            self._export_general_market_data(
+                all_stock_data, technical_indicators, 
+                sector_analyses, market_overview
+            )
+            
+            logger.info("Market data collection completed successfully!")
+            return market_report
+            
+        except Exception as e:
+            logger.error(f"Error in data collection: {e}")
+            raise
+    
+    def _export_general_market_data(self, stock_data: List[StockData], 
+                                  technical_indicators: List[TechnicalIndicators],
+                                  sector_analyses: List[SectorAnalysis],
+                                  market_overview: MarketOverview):
+        """Export general market data for all agents"""
+        
+        # Create general export directory
+        current_file = os.path.abspath(__file__)
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+        export_dir = os.path.join(project_root, "data", "monitor_data")
+        os.makedirs(export_dir, exist_ok=True)
+        
+        # Export general market data
+        market_data = {
+            "timestamp": datetime.now().isoformat(),
+            "market_overview": {
+                "sentiment": market_overview.market_sentiment,
+                "volatility": market_overview.market_volatility,
+                "breadth": market_overview.market_breadth,
+                "fear_greed_index": market_overview.fear_greed_index
+            },
+            "stocks": [],
+            "sectors": []
+        }
+        
+        # Add all stock data
+        for stock in stock_data:
+            tech_data = next((t for t in technical_indicators if t.symbol == stock.symbol), None)
+            
+            stock_entry = {
+                "symbol": stock.symbol,
+                "company_name": stock.company_name,
+                "sector": stock.sector,
+                "current_price": stock.current_price,
+                "price_change_pct": stock.price_change_pct,
+                "volume": stock.volume,
+                "market_cap": stock.market_cap,
+                "technical_indicators": {
+                    "rsi": tech_data.rsi if tech_data else None,
+                    "volatility": tech_data.volatility if tech_data else None,
+                    "momentum_20d": tech_data.momentum_20d if tech_data else None,
+                    "signal_strength": tech_data.signal_strength if tech_data else None
+                }
+            }
+            market_data["stocks"].append(stock_entry)
+        
+        # Add all sector data
+        for sector in sector_analyses:
+            sector_entry = {
+                "sector": sector.sector,
+                "performance": sector.avg_price_change,
+                "volatility": sector.sector_volatility,
+                "trend": sector.trend_direction,
+                "strength": sector.sector_strength
+            }
+            market_data["sectors"].append(sector_entry)
+        
+        # Save general market data
+        with open(f"{export_dir}/general_market_data.json", 'w') as f:
+            json.dump(market_data, f, indent=2)
+        
+        logger.info(f"General market data exported to {export_dir}")
 
-# Usage functions
-def create_sample_customer_filter() -> CustomerDataFilter:
-    """Create a sample customer filter for testing with time-based investment horizon"""
-    return CustomerDataFilter(
-        customer_id="CUST_001",
-        customer_name="Rajesh Kumar",
-        preferred_sectors=["TECH", "BANKING", "PHARMA", "AUTO", "ENERGY", "FMCG"],
-        risk_tolerance="MEDIUM",
-        investment_horizon_months=24,  # 2 years = 24 months
-        capital_amount=100000
-    )
 
 def main():
-    """Main function to demonstrate updated Monitor Agent with time-based investment horizon"""
-    logger.info("Starting Updated Monitor Agent - Time-Based Investment Horizon")
+    """Main function to demonstrate customer-agnostic Monitor Agent"""
+    logger.info("Starting Monitor Agent - Pure Market Data Collection")
     
     # Create data collector
-    data_collector = IndianStockDataCollector()
-    
-    # Create sample customer filter with time-based horizon
-    customer_filter = create_sample_customer_filter()
+    data_collector = MarketDataCollector()
     
     try:
-        # Run comprehensive data collection
-        market_report, customer_report = data_collector.run_comprehensive_data_collection(customer_filter)
+        # Run comprehensive data collection (NO customer input)
+        market_report = data_collector.run_comprehensive_data_collection()
         
         print("\n" + "="*80)
-        print("🎉 MARKET DATA COLLECTION COMPLETE! (Updated Version)")
+        print("🎉 MARKET DATA COLLECTION COMPLETE!")
         print("="*80)
-        print(f"📊 General Market Report: {market_report}")
-        print(f"🎯 Customer Report: {customer_report}")
-        print(f"👤 Customer: {customer_filter.customer_name}")
-        print(f"🏭 Sectors: {', '.join(customer_filter.preferred_sectors)}")
-        print(f"⚠️  Risk Profile: {customer_filter.risk_tolerance}")
-        print(f"📅 Investment Horizon: {customer_filter.investment_horizon_months} months ({customer_filter.investment_horizon_category})")
-        
-        print("\n📋 Excel Report Contains:")
+        print(f"📊 Market Report: {market_report}")
+        print("\n📋 Report Contains:")
         print("   📊 Market Overview - Market sentiment & conditions")
-        print("   💰 Stock Data - Comprehensive price & volume data")
+        print("   💰 All Stock Data - Complete price & volume data")
         print("   🔧 Technical Indicators - RSI, moving averages, signals")
-        print("   🏭 Sector Analysis - Sector performance & trends")
+        print("   🏭 Sector Analysis - All sector performance & trends")
         print("   📈 Historical Trends - Price patterns & analysis")
-        print("   🎯 Filtered Data - Customer-specific data view with time-based horizon")
-        
         print("\n📤 Data Export for Other Agents:")
-        print(f"   📁 data/monitor_data/{customer_filter.customer_id}/")
-        print("   📄 investment_planner_data.json - Structured data with time-based horizon")
-        print("   📄 stock_data.csv - Backup CSV data")
-        
-        print(f"\n✅ Open reports to view analysis:")
-        print(f"   📊 Market: {market_report}")
-        print(f"   🎯 Customer: {customer_report}")
+        print("   📁 data/monitor_data/general_market_data.json")
+        print("   📄 Complete market intelligence for Planner consumption")
         print("="*80)
         
     except Exception as e:
         logger.error(f"Error in main execution: {e}")
         print(f"❌ Error: {e}")
+
 
 if __name__ == "__main__":
     main()
