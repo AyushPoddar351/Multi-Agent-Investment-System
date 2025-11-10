@@ -1,6 +1,6 @@
 """
-Monitor Agent - Pure Data Collection & Analysis
-Multi-Agent Investment Management System - Refactored Version
+Monitor Agent - Pure Data Collection & Analysis (Updated Version)
+Multi-Agent Investment Management System - Time-Based Investment Horizon
 """
 
 import yfinance as yf
@@ -86,13 +86,23 @@ class MarketOverview:
 
 @dataclass
 class CustomerDataFilter:
-    """Customer-specific data filtering preferences"""
+    """Customer-specific data filtering preferences with time-based investment horizon"""
     customer_id: str
     customer_name: str
     preferred_sectors: List[str]
     risk_tolerance: str  # LOW, MEDIUM, HIGH
-    investment_horizon: str  # SHORT, MEDIUM, LONG
+    investment_horizon_months: int  # Numeric: 6, 12, 24, 60, etc.
     capital_amount: float
+    
+    @property
+    def investment_horizon_category(self) -> str:
+        """Auto-calculate category for human readability"""
+        if self.investment_horizon_months <= 12:
+            return "SHORT"
+        elif self.investment_horizon_months <= 36:
+            return "MEDIUM"
+        else:
+            return "LONG"
 
 class ExcelDataReporter:
     """Handles Excel report generation for pure data analysis"""
@@ -223,7 +233,7 @@ class ExcelDataReporter:
     
     def _create_customer_overview_sheet(self, wb: Workbook, market_overview: MarketOverview, 
                                       customer_filter: CustomerDataFilter):
-        """Create customer-specific overview sheet"""
+        """Create customer-specific overview sheet with time-based investment horizon"""
         ws = wb.create_sheet("🎯 Customer Overview", 0)
         
         # Title and date
@@ -238,9 +248,20 @@ class ExcelDataReporter:
         ws['A5'] = "👤 CUSTOMER PROFILE"
         ws['A5'].font = self.fonts['subtitle']
         
+        # Format investment horizon display
+        years = customer_filter.investment_horizon_months // 12
+        months = customer_filter.investment_horizon_months % 12
+        
+        if years > 0 and months > 0:
+            horizon_display = f"{customer_filter.investment_horizon_months} months ({years}y {months}m) - {customer_filter.investment_horizon_category}"
+        elif years > 0:
+            horizon_display = f"{customer_filter.investment_horizon_months} months ({years} years) - {customer_filter.investment_horizon_category}"
+        else:
+            horizon_display = f"{customer_filter.investment_horizon_months} months - {customer_filter.investment_horizon_category}"
+        
         profile_data = [
             ['Risk Tolerance', customer_filter.risk_tolerance],
-            ['Investment Horizon', customer_filter.investment_horizon],
+            ['Investment Horizon', horizon_display],
             ['Capital Amount', f"₹{customer_filter.capital_amount:,.0f}"],
             ['Preferred Sectors', ', '.join(customer_filter.preferred_sectors)]
         ]
@@ -533,7 +554,7 @@ class ExcelDataReporter:
         ws = wb.create_sheet("🎯 Customer Filtered Data")
         
         ws['A1'] = f"FILTERED DATA FOR {customer_filter.customer_name}"
-        ws['A2'] = f"Sectors: {', '.join(customer_filter.preferred_sectors)} | Risk: {customer_filter.risk_tolerance}"
+        ws['A2'] = f"Sectors: {', '.join(customer_filter.preferred_sectors)} | Risk: {customer_filter.risk_tolerance} | Horizon: {customer_filter.investment_horizon_months}m ({customer_filter.investment_horizon_category})"
         
         ws['A1'].font = self.fonts['title']
         ws['A2'].font = self.fonts['subtitle']
@@ -600,6 +621,7 @@ class ExcelDataReporter:
         ws[f'A{summary_row + 1}'] = f"Average Performance: {filtered_df['Change %'].mean():.2f}%"
         ws[f'A{summary_row + 2}'] = f"Best Performer: {filtered_df.iloc[0]['Symbol']} ({filtered_df.iloc[0]['Change %']:.2f}%)"
         ws[f'A{summary_row + 3}'] = f"Sectors Covered: {len(set(stock.sector for stock in filtered_stocks))}"
+        ws[f'A{summary_row + 4}'] = f"Investment Horizon: {customer_filter.investment_horizon_months} months ({customer_filter.investment_horizon_category})"
         
         self._auto_adjust_columns(ws)
     
@@ -998,7 +1020,8 @@ class IndianStockDataCollector:
             "customer_preferences": {
                 "sectors": customer_filter.preferred_sectors,
                 "risk_tolerance": customer_filter.risk_tolerance,
-                "investment_horizon": customer_filter.investment_horizon
+                "investment_horizon_months": customer_filter.investment_horizon_months,
+                "investment_horizon_category": customer_filter.investment_horizon_category
             }
         }
         
@@ -1183,24 +1206,24 @@ class IndianStockDataCollector:
 
 # Usage functions
 def create_sample_customer_filter() -> CustomerDataFilter:
-    """Create a sample customer filter for testing"""
+    """Create a sample customer filter for testing with time-based investment horizon"""
     return CustomerDataFilter(
         customer_id="CUST_001",
         customer_name="Rajesh Kumar",
         preferred_sectors=["TECH", "BANKING", "PHARMA", "AUTO", "ENERGY", "FMCG"],
         risk_tolerance="MEDIUM",
-        investment_horizon="MEDIUM",
+        investment_horizon_months=24,  # 2 years = 24 months
         capital_amount=100000
     )
 
 def main():
-    """Main function to demonstrate refactored Monitor Agent"""
-    logger.info("Starting Refactored Monitor Agent - Data Collection Only")
+    """Main function to demonstrate updated Monitor Agent with time-based investment horizon"""
+    logger.info("Starting Updated Monitor Agent - Time-Based Investment Horizon")
     
     # Create data collector
     data_collector = IndianStockDataCollector()
     
-    # Create sample customer filter
+    # Create sample customer filter with time-based horizon
     customer_filter = create_sample_customer_filter()
     
     try:
@@ -1208,14 +1231,14 @@ def main():
         market_report, customer_report = data_collector.run_comprehensive_data_collection(customer_filter)
         
         print("\n" + "="*80)
-        print("🎉 MARKET DATA COLLECTION COMPLETE!")
+        print("🎉 MARKET DATA COLLECTION COMPLETE! (Updated Version)")
         print("="*80)
         print(f"📊 General Market Report: {market_report}")
         print(f"🎯 Customer Report: {customer_report}")
         print(f"👤 Customer: {customer_filter.customer_name}")
         print(f"🏭 Sectors: {', '.join(customer_filter.preferred_sectors)}")
         print(f"⚠️  Risk Profile: {customer_filter.risk_tolerance}")
-        print(f"📅 Investment Horizon: {customer_filter.investment_horizon}")
+        print(f"📅 Investment Horizon: {customer_filter.investment_horizon_months} months ({customer_filter.investment_horizon_category})")
         
         print("\n📋 Excel Report Contains:")
         print("   📊 Market Overview - Market sentiment & conditions")
@@ -1223,11 +1246,11 @@ def main():
         print("   🔧 Technical Indicators - RSI, moving averages, signals")
         print("   🏭 Sector Analysis - Sector performance & trends")
         print("   📈 Historical Trends - Price patterns & analysis")
-        print("   🎯 Filtered Data - Customer-specific data view")
+        print("   🎯 Filtered Data - Customer-specific data view with time-based horizon")
         
         print("\n📤 Data Export for Other Agents:")
         print(f"   📁 data/monitor_data/{customer_filter.customer_id}/")
-        print("   📄 investment_planner_data.json - Structured data for Investment Planner")
+        print("   📄 investment_planner_data.json - Structured data with time-based horizon")
         print("   📄 stock_data.csv - Backup CSV data")
         
         print(f"\n✅ Open reports to view analysis:")
